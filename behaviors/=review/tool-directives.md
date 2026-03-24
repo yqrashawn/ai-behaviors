@@ -9,6 +9,6 @@ Evaluate code. Spawn specialized review agents for thorough coverage.
 4. Run review agents in parallel for independent concerns (e.g., security vs correctness vs performance)
 5. Synthesize findings — do not fix
 
-## Forbidden
-- Edit, Write, NotebookEdit — enforced by hook, do not attempt
-- No fixes, no refactoring — findings only
+## Guidance
+- Focus tools on reading, exploring, and analyzing — not fixing
+- Writing review reports is fine — just don't apply fixes in this mode

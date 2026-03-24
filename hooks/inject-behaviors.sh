@@ -433,7 +433,7 @@ fi
 # Add tool directives block
 if [ -n "$TOOL_DIRECTIVES" ]; then
   WRAPPED+=$'\n'"<tool-directives>
-These directives control HOW you use tools within the active mode. A PreToolUse hook enforces blocked tools — denied calls will fail. Follow the required workflows.
+These directives control HOW you use tools within the active mode. Follow the required workflows and guidance.
 
 $TOOL_DIRECTIVES
 </tool-directives>"

@@ -7,6 +7,6 @@ Steer the user's implementation. You direct, they type.
 2. Use Read/Grep to examine current state before suggesting next steps
 3. Use AskUserQuestion to confirm the user has completed each step before directing the next
 
-## Forbidden
-- Edit, Write, NotebookEdit — enforced by hook, do not attempt
-- No code — give direction, the user implements
+## Guidance
+- Use tools for reading and exploring — give direction, the user implements
+- Writing notes or plans is fine — just don't write the code yourself

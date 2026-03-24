@@ -216,59 +216,25 @@ Use `#file` to persist the pipeline to a shared artifact: `#=frame #file` starts
 
 That said, you can use plan mode, but I'd suggest not using an operating mode then. You lose the granularity of frame → research → design → spec but can still use qualities and techniques, e.g. `#deep #wide #fractal #decompose`.
 
-## Tool Enforcement (Claude Code Plugin)
+## Tool Directives (Subagent Routing)
 
-Behaviors don't just *ask* the LLM to stay in bounds — they *enforce* it. A `PreToolUse` hook blocks mutation tools when the active mode forbids them.
+Each behavior can include a `tool-directives.md` file that instructs the LLM *how* to use Claude Code tools within that mode. These are injected as a `<tool-directives>` block alongside the behavior prompts.
 
-### How it works
-
-Each mode can have a `blocked-tools` file listing tools that are denied:
-
-```
-behaviors/=review/blocked-tools:
-  Edit
-  Write
-  NotebookEdit
-```
-
-When `#=review` is active, any attempt to call `Edit`, `Write`, or `NotebookEdit` is denied by the hook with a clear message explaining why and suggesting the user switch modes.
-
-**Modes with tool blocking:** `#=frame`, `#=research`, `#=design`, `#=review`, `#=test`, `#=probe`, `#=navigate`
-
-**Modes with full access:** `#=code`, `#=debug`, `#=drive`, `#=mentor`, `#=record`
-
-**Spec is special:** `#=spec` blocks `Edit` and `NotebookEdit` but allows `Write` for persisting spec documents.
-
-### blocked-tools format
-
-One tool name per line. Lines starting with `#` are comments. Supports prefix matching with `*`:
-
-```
-Edit                  # exact match
-Write                 # exact match
-mcp__clojure-mcp__*   # prefix match — blocks all tools from this MCP server
-```
-
-### Override per-project
-
-Project-local overrides work the same as behaviors: create `.ai-behaviors/=review/blocked-tools` in your project root to override the repo default for that mode.
-
-### Tool Directives (Subagent Routing)
-
-Each behavior can include a `tool-directives.md` file that instructs the LLM *how* to use tools within that mode. These are injected as a `<tool-directives>` block alongside the behavior prompts.
-
-Examples of what tool directives do:
+This is the key integration with Claude Code — behaviors don't just change what the LLM says, they change how it uses tools like subagents, AskUserQuestion, Explore, and Bash.
 
 | Mode/Quality | Directive |
 |---|---|
 | `#=research` | Spawn parallel Explore agents for each investigation thread |
 | `#=review` | Spawn code-reviewer subagents for thorough analysis |
 | `#=debug` | Spawn Explore agents to trace execution paths |
+| `#=code` | Self-review via code-reviewer agent after implementation |
+| `#=probe` | Route responses through AskUserQuestion |
+| `#=mentor` | Use AskUserQuestion for comprehension checks |
 | `#wide` | Spawn multiple Explore agents in parallel per adjacent concern |
 | `#deep` | Chain Explore agents to trace deeper layers |
 | `#recursive` | Spawn review agent on output, iterate to fixpoint (max 3) |
 | `#simulate` | Use Bash with debug flags + Explore to trace real execution |
-| `#=probe` | Route all responses through AskUserQuestion |
+| `#ground` | Use Grep/Glob to verify every term resolves to something real |
 
 Tool directives compose with the mode — `#=review #wide #deep` gets the review agent directives plus parallel exploration plus deep tracing.
 
@@ -280,11 +246,9 @@ behaviors/
 │   ├── README.md           # human docs: what, why, rules, common prompts
 │   ├── prompt.md           # terse text injected into the LLM's context
 │   ├── compose             # (composites only) hashtags this composite expands to
-│   ├── blocked-tools       # (modes only) tools denied by PreToolUse hook
 │   └── tool-directives.md  # tool routing: subagents, workflows, required patterns
 hooks/
-├── inject-behaviors.sh     # UserPromptSubmit: injects prompts + tool directives
-└── enforce-mode.sh         # PreToolUse: denies blocked tools per active mode
+└── inject-behaviors.sh     # UserPromptSubmit: injects prompts + tool directives
 ```
 
 ## Composites

@@ -7,6 +7,6 @@ Scope the problem space. Use tools only for understanding, never for changing.
 2. For broad codebase understanding: spawn Agent(subagent_type="Explore")
 3. Use AskUserQuestion to clarify ambiguities — do not assume
 
-## Forbidden
-- Edit, Write, NotebookEdit — enforced by hook, do not attempt
-- No investigation of solutions — only scope the problem
+## Guidance
+- Focus tools on understanding the landscape, not changing it
+- Writing notes or reports is fine — just stay in problem-scoping territory

@@ -8,6 +8,6 @@ Explore solution candidates. Use tools for understanding feasibility, not implem
 3. Run feasibility agents in parallel for independent candidates
 4. Present candidates with evidence gathered from agents
 
-## Forbidden
-- Edit, Write, NotebookEdit — enforced by hook, do not attempt
-- No commitment to a candidate — present options for user decision
+## Guidance
+- Focus tools on exploring feasibility, not implementing
+- Writing design docs or comparison notes is fine — don't commit to a candidate without user decision

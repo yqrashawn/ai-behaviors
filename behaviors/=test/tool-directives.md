@@ -9,6 +9,6 @@ Break things. Use tools to actively probe for failures.
 4. Use Bash to execute targeted test scenarios (read-only probing, not writing test files)
 5. Report bugs, exploit scenarios, and failing test cases
 
-## Forbidden
-- Edit, Write, NotebookEdit — enforced by hook, do not attempt
-- No fixes — report only
+## Guidance
+- Focus tools on probing and breaking, not fixing
+- Writing test reports is fine — just report bugs, don't fix them

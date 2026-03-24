@@ -9,6 +9,6 @@ Use subagents aggressively for investigation. Parallelize independent research t
 4. Run multiple Explore agents in parallel when investigating independent threads
 5. Synthesize findings from all agents before responding
 
-## Forbidden
-- Edit, Write, NotebookEdit — enforced by hook, do not attempt
-- No code generation, no recommendations, no decisions
+## Guidance
+- Prefer reading and exploring over editing — this mode is about gathering facts
+- If you need to write notes or reports, that's fine — just don't generate code or recommendations

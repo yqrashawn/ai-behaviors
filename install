@@ -6,17 +6,15 @@ CLAUDE_DIR="$HOME/.claude"
 HOOKS_DIR="$CLAUDE_DIR/hooks"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
-echo "Installing ai-behaviors hooks"
+echo "Installing ai-behaviors hook"
 
 mkdir -p "$HOOKS_DIR"
 
-# --- Symlink hooks ---
+# --- Symlink hook ---
 ln -sf "$REPO_DIR/hooks/inject-behaviors.sh" "$HOOKS_DIR/inject-behaviors.sh"
 echo "  symlinked: inject-behaviors.sh → $HOOKS_DIR/"
-ln -sf "$REPO_DIR/hooks/enforce-mode.sh" "$HOOKS_DIR/enforce-mode.sh"
-echo "  symlinked: enforce-mode.sh → $HOOKS_DIR/"
 
-# --- Register hooks in settings.json ---
+# --- Register hook in settings.json ---
 if [ ! -f "$SETTINGS" ]; then
   cat > "$SETTINGS" <<'EOF'
 {
@@ -38,23 +36,7 @@ else
   echo "  already registered: inject-behaviors.sh"
 fi
 
-enforce_cmd="$HOOKS_DIR/enforce-mode.sh"
-if ! grep -q "enforce-mode.sh" "$SETTINGS" 2>/dev/null; then
-  tmp=$(mktemp)
-  jq --arg cmd "$enforce_cmd" '
-    .hooks //= {} |
-    .hooks.PreToolUse //= [] |
-    .hooks.PreToolUse += [{"hooks": [{"type": "command", "command": $cmd, "timeout": 3}]}]
-  ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
-  echo "  registered: enforce-mode.sh in settings.json"
-else
-  echo "  already registered: enforce-mode.sh"
-fi
-
 echo ""
 echo "Done. Use #hashtags in Claude Code prompts:"
 echo "  Fix the auth bug #=code #challenge"
 echo "  Review this PR #=review #deep #challenge"
-echo ""
-echo "Tool enforcement is active: modes like #=review, #=research"
-echo "will block Edit/Write tools. See blocked-tools files per mode."
