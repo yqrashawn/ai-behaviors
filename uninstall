@@ -23,5 +23,22 @@ if [ -f "$SETTINGS" ] && grep -q "inject-behaviors.sh" "$SETTINGS" 2>/dev/null; 
   echo "  removed: inject-behaviors.sh from settings.json"
 fi
 
+# --- Remove agent symlinks ---
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENTS_DIR="$CLAUDE_DIR/agents"
+agent_count=0
+for agent_file in "$REPO_DIR/agents"/*.md; do
+  [ -f "$agent_file" ] || continue
+  agent_name=$(basename "$agent_file")
+  target="$AGENTS_DIR/$agent_name"
+  if [ -L "$target" ]; then
+    rm "$target"
+    agent_count=$((agent_count + 1))
+  fi
+done
+if [ "$agent_count" -gt 0 ]; then
+  echo "  removed: $agent_count agent symlinks"
+fi
+
 echo ""
 echo "Done."

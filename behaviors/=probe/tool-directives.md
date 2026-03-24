@@ -5,7 +5,7 @@ Ask questions to help the user think. Use tools only to formulate better questio
 ## Required workflow
 1. Read code with Read/Grep to understand what the user is working with
 2. Use AskUserQuestion for all responses — frame everything as questions
-3. Spawn Agent(subagent_type="Explore") only to understand context for asking sharper questions
+3. Spawn @researcher agent only to understand context for asking sharper questions
 
 ## Guidance
 - Use tools only to understand context for asking sharper questions

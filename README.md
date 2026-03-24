@@ -216,24 +216,67 @@ Use `#file` to persist the pipeline to a shared artifact: `#=frame #file` starts
 
 That said, you can use plan mode, but I'd suggest not using an operating mode then. You lose the granularity of frame → research → design → spec but can still use qualities and techniques, e.g. `#deep #wide #fractal #decompose`.
 
+## Agents
+
+Pre-built subagent definitions that embed behavior combinations. Installed to `~/.claude/agents/` — invoke with `@agent-name` or natural language.
+
+| Agent | Behaviors | Use for |
+|---|---|---|
+| `@deep-reviewer` | `#=review #deep #challenge` | Thorough code review that finds real flaws |
+| `@researcher` | `#=research #deep #wide` | Deep and wide investigation, facts only |
+| `@debugger` | `#=debug #deep #simulate` | Systematic fault isolation with execution tracing |
+| `@architect` | `#=design #first-principles #challenge #deep` | Solution design from constraints, not patterns |
+| `@spec-writer` | `#=spec #decompose #negative-space` | Structured specs with gap analysis |
+| `@adversary` | `#=test #challenge #simulate` | Adversarial testing — actively break things |
+| `@mentor` | `#=mentor #deep #first-principles` | Teach through code, derive from axioms |
+| `@framer` | `#=frame #challenge #wide` | Problem scoping without jumping to solutions |
+
+Each agent's markdown file contains the composed behavior prompts, tool restrictions, and workflow instructions. The agent carries its behaviors — no hashtags needed when invoking directly.
+
+### Custom agents
+
+Create your own composed agents the same way:
+
+```markdown
+# ~/.claude/agents/my-security-reviewer.md
+---
+name: my-security-reviewer
+description: Security-focused code review with adversarial testing
+tools: Read, Grep, Glob, Bash, Agent
+maxTurns: 15
+---
+
+<operating-mode>
+[paste from behaviors/=review/prompt.md]
+</operating-mode>
+
+<behavior-modifiers>
+[paste from behaviors/challenge/prompt.md]
+[paste from behaviors/simulate/prompt.md]
+</behavior-modifiers>
+
+Focus on OWASP Top 10. Flag any use of unsafe operations.
+```
+
 ## Tool Directives (Subagent Routing)
 
-Each behavior can include a `tool-directives.md` file that instructs the LLM *how* to use Claude Code tools within that mode. These are injected as a `<tool-directives>` block alongside the behavior prompts.
+Each behavior can include a `tool-directives.md` file that instructs the LLM *how* to use tools and agents within that mode. These are injected as a `<tool-directives>` block alongside the behavior prompts.
 
-This is the key integration with Claude Code — behaviors don't just change what the LLM says, they change how it uses tools like subagents, AskUserQuestion, Explore, and Bash.
+Tool directives reference the installed agents by name — so `#=review` knows to spawn `@deep-reviewer`, `#=debug` knows to spawn `@debugger`, etc.
 
 | Mode/Quality | Directive |
 |---|---|
-| `#=research` | Spawn parallel Explore agents for each investigation thread |
-| `#=review` | Spawn code-reviewer subagents for thorough analysis |
-| `#=debug` | Spawn Explore agents to trace execution paths |
-| `#=code` | Self-review via code-reviewer agent after implementation |
+| `#=research` | Spawn parallel @researcher agents for each investigation thread |
+| `#=review` | Spawn @deep-reviewer for thorough analysis |
+| `#=debug` | Spawn @debugger to trace execution paths |
+| `#=code` | Self-review via @deep-reviewer after implementation |
+| `#=test` | Spawn @adversary to find untested paths and edge cases |
 | `#=probe` | Route responses through AskUserQuestion |
 | `#=mentor` | Use AskUserQuestion for comprehension checks |
-| `#wide` | Spawn multiple Explore agents in parallel per adjacent concern |
-| `#deep` | Chain Explore agents to trace deeper layers |
-| `#recursive` | Spawn review agent on output, iterate to fixpoint (max 3) |
-| `#simulate` | Use Bash with debug flags + Explore to trace real execution |
+| `#wide` | Spawn multiple @researcher agents in parallel per adjacent concern |
+| `#deep` | Chain @researcher agents to trace deeper layers |
+| `#recursive` | Spawn @deep-reviewer on output, iterate to fixpoint (max 3) |
+| `#simulate` | Use Bash with debug flags + @debugger to trace real execution |
 | `#ground` | Use Grep/Glob to verify every term resolves to something real |
 
 Tool directives compose with the mode — `#=review #wide #deep` gets the review agent directives plus parallel exploration plus deep tracing.
@@ -247,6 +290,15 @@ behaviors/
 │   ├── prompt.md           # terse text injected into the LLM's context
 │   ├── compose             # (composites only) hashtags this composite expands to
 │   └── tool-directives.md  # tool routing: subagents, workflows, required patterns
+agents/
+├── deep-reviewer.md        # #=review #deep #challenge
+├── researcher.md           # #=research #deep #wide
+├── debugger.md             # #=debug #deep #simulate
+├── architect.md            # #=design #first-principles #challenge #deep
+├── spec-writer.md          # #=spec #decompose #negative-space
+├── adversary.md            # #=test #challenge #simulate
+├── mentor.md               # #=mentor #deep #first-principles
+└── framer.md               # #=frame #challenge #wide
 hooks/
 └── inject-behaviors.sh     # UserPromptSubmit: injects prompts + tool directives
 ```

@@ -36,7 +36,28 @@ else
   echo "  already registered: inject-behaviors.sh"
 fi
 
+# --- Symlink agents ---
+AGENTS_DIR="$CLAUDE_DIR/agents"
+mkdir -p "$AGENTS_DIR"
+agent_count=0
+for agent_file in "$REPO_DIR/agents"/*.md; do
+  [ -f "$agent_file" ] || continue
+  agent_name=$(basename "$agent_file")
+  ln -sf "$agent_file" "$AGENTS_DIR/$agent_name"
+  agent_count=$((agent_count + 1))
+done
+if [ "$agent_count" -gt 0 ]; then
+  echo "  symlinked: $agent_count agents → $AGENTS_DIR/"
+fi
+
 echo ""
 echo "Done. Use #hashtags in Claude Code prompts:"
 echo "  Fix the auth bug #=code #challenge"
 echo "  Review this PR #=review #deep #challenge"
+echo ""
+echo "Agents installed (invoke with @agent-name or natural language):"
+for agent_file in "$REPO_DIR/agents"/*.md; do
+  [ -f "$agent_file" ] || continue
+  agent_name=$(basename "$agent_file" .md)
+  echo "  @$agent_name"
+done

@@ -3,7 +3,7 @@
 Explore solution candidates. Use tools for understanding feasibility, not implementing.
 
 ## Required workflow
-1. For each candidate: spawn Agent(subagent_type="Explore") to assess feasibility in the codebase
+1. For each candidate: spawn @architect or @researcher agent to assess feasibility in the codebase
 2. For external libraries/approaches: use WebSearch/WebFetch
 3. Run feasibility agents in parallel for independent candidates
 4. Present candidates with evidence gathered from agents
