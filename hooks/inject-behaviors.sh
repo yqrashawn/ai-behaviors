@@ -132,7 +132,11 @@ build_tree() {
   done
 }
 
-HASHTAGS=$(grep -oE '(^|[[:space:]])#[=a-zA-Z0-9_-]+' <<< "$PROMPT" | sed 's/^[[:space:]]//' | awk '!seen[$0]++') || true
+# Anchor on #= (operating mode) to find the last intentional behavior line.
+# The #= prefix is a distinct namespace that doesn't appear in code/prose.
+# Once we find the anchoring line, extract ALL hashtags from it (mode + modifiers).
+LAST_TAG_LINE=$(grep -E '(^|[[:space:]])#=[a-zA-Z0-9_-]+' <<< "$PROMPT" | tail -1) || true
+HASHTAGS=$(grep -oE '(^|[[:space:]])#[=a-zA-Z0-9_-]+' <<< "$LAST_TAG_LINE" | sed 's/^[[:space:]]//' | awk '!seen[$0]++') || true
 
 # State file for persistence across prompts
 STATE_DIR="$HOME/.claude/behaviors-state"
