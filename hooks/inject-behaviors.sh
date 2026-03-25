@@ -345,14 +345,10 @@ MOD_TAGS=$(echo "$EXPAND_LEAF_TAGS" | tr ' ' '\n' | grep -v '^#=' | grep '.' || 
 
 # Read mode content
 MODE_CONTEXT=""
-TOOL_DIRECTIVES=""
 if [ -n "$MODE_TAG" ]; then
   DIR=$(resolve_dir "$MODE_TAG")
   if [ -n "$DIR" ] && [ -f "$DIR/prompt.md" ]; then
     MODE_CONTEXT="$(cat "$DIR/prompt.md")"
-  fi
-  if [ -n "$DIR" ] && [ -f "$DIR/tool-directives.md" ]; then
-    TOOL_DIRECTIVES+="$(cat "$DIR/tool-directives.md")"
   fi
 fi
 
@@ -368,10 +364,6 @@ if [ -n "$MOD_TAGS" ]; then
         MOD_CONTEXT+=$'\n\n'
       fi
       MOD_CONTEXT+="$(cat "$DIR/prompt.md")"
-    fi
-    if [ -n "$DIR" ] && [ -f "$DIR/tool-directives.md" ]; then
-      [ -n "$TOOL_DIRECTIVES" ] && TOOL_DIRECTIVES+=$'\n\n'
-      TOOL_DIRECTIVES+="$(cat "$DIR/tool-directives.md")"
     fi
   done <<< "$MOD_TAGS"
 fi
@@ -434,22 +426,13 @@ $MOD_CONTEXT
   fi
 fi
 
-# Add tool directives block
-if [ -n "$TOOL_DIRECTIVES" ]; then
-  WRAPPED+=$'\n'"<tool-directives>
-These directives control HOW you use tools within the active mode. Follow the required workflows and guidance.
-
-$TOOL_DIRECTIVES
-</tool-directives>"
-fi
-
 # Add inline marking instruction when modifiers are active
 if [ -n "$MOD_CONTEXT" ]; then
   WRAPPED+=$'\n'"When a behavior modifier causes you to make a point you would not otherwise make, mark it: (#name) after the sentence. Operating modes: no markers."
 fi
 
 if [ -n "$WRAPPED" ]; then
-  WRAPPED+=$'\n'"The above operating-mode, behavior-modifiers, and tool-directives apply to all your responses until superseded. When new blocks appear, only the most recent set applies. During compaction, preserve the most recent <operating-mode>, <behavior-modifiers>, and <tool-directives> blocks verbatim. Discard all older ones."
+  WRAPPED+=$'\n'"The above operating-mode and behavior-modifiers apply to all your responses until superseded. When new blocks appear, only the most recent set applies. During compaction, preserve the most recent <operating-mode> and <behavior-modifiers> blocks verbatim. Discard all older ones."
   jq -n --arg ctx "$WRAPPED" '{
     hookSpecificOutput: {
       hookEventName: "UserPromptSubmit",

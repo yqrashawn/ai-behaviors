@@ -258,29 +258,6 @@ maxTurns: 15
 Focus on OWASP Top 10. Flag any use of unsafe operations.
 ```
 
-## Tool Directives (Subagent Routing)
-
-Each behavior can include a `tool-directives.md` file that instructs the LLM *how* to use tools and agents within that mode. These are injected as a `<tool-directives>` block alongside the behavior prompts.
-
-Tool directives reference the installed agents by name — so `#=review` knows to spawn `@deep-reviewer`, `#=debug` knows to spawn `@debugger`, etc.
-
-| Mode/Quality | Directive |
-|---|---|
-| `#=research` | Spawn parallel @researcher agents for each investigation thread |
-| `#=review` | Spawn @deep-reviewer for thorough analysis |
-| `#=debug` | Spawn @debugger to trace execution paths |
-| `#=code` | Self-review via @deep-reviewer after implementation |
-| `#=test` | Spawn @adversary to find untested paths and edge cases |
-| `#=probe` | Route responses through AskUserQuestion |
-| `#=mentor` | Use AskUserQuestion for comprehension checks |
-| `#wide` | Spawn multiple @researcher agents in parallel per adjacent concern |
-| `#deep` | Chain @researcher agents to trace deeper layers |
-| `#recursive` | Spawn @deep-reviewer on output, iterate to fixpoint (max 3) |
-| `#simulate` | Use Bash with debug flags + @debugger to trace real execution |
-| `#ground` | Use Grep/Glob to verify every term resolves to something real |
-
-Tool directives compose with the mode — `#=review #wide #deep` gets the review agent directives plus parallel exploration plus deep tracing.
-
 ## Structure
 
 ```
@@ -288,8 +265,7 @@ behaviors/
 ├── <behavior>/
 │   ├── README.md           # human docs: what, why, rules, common prompts
 │   ├── prompt.md           # terse text injected into the LLM's context
-│   ├── compose             # (composites only) hashtags this composite expands to
-│   └── tool-directives.md  # tool routing: subagents, workflows, required patterns
+│   └── compose             # (composites only) hashtags this composite expands to
 agents/
 ├── deep-reviewer.md        # #=review #deep #challenge
 ├── researcher.md           # #=research #deep #wide
@@ -300,7 +276,7 @@ agents/
 ├── mentor.md               # #=mentor #deep #first-principles
 └── framer.md               # #=frame #challenge #wide
 hooks/
-└── inject-behaviors.sh     # UserPromptSubmit: injects prompts + tool directives
+└── inject-behaviors.sh     # UserPromptSubmit: injects prompts
 ```
 
 ## Composites
