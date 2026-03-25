@@ -178,10 +178,15 @@ if [ -z "$HASHTAGS" ]; then
     if [ -z "$MARKING" ] && ls "$_CUSTOM_DIR"/* >/dev/null 2>&1; then
       MARKING=$'\n'"When a behavior modifier causes you to make a point you would not otherwise make, mark it: (#name) after the sentence. Operating modes: no markers."
     fi
-    jq -n --arg active "$ACTIVE" --arg constraints "$CONSTRAINTS" --arg marking "$MARKING" '{
+    # Tool routing: direct questions to AskUserQuestion tool when a mode is active
+    ASK_TOOL=""
+    if echo "$EXPAND_LEAF_TAGS" | grep -qE '(^| )#='; then
+      ASK_TOOL=$'\n'"When you need to ask the user a question (clarification, decision, check-in, approval), use the AskUserQuestion tool. Do not write questions as plain text output and wait."
+    fi
+    jq -n --arg active "$ACTIVE" --arg constraints "$CONSTRAINTS" --arg marking "$MARKING" --arg asktool "$ASK_TOOL" '{
       hookSpecificOutput: {
         hookEventName: "UserPromptSubmit",
-        additionalContext: ("Active: " + $active + ". HARD CONSTRAINTs in force:" + $constraints + $marking)
+        additionalContext: ("Active: " + $active + ". HARD CONSTRAINTs in force:" + $constraints + $marking + $asktool)
       }
     }'
   fi
@@ -429,6 +434,11 @@ fi
 # Add inline marking instruction when modifiers are active
 if [ -n "$MOD_CONTEXT" ]; then
   WRAPPED+=$'\n'"When a behavior modifier causes you to make a point you would not otherwise make, mark it: (#name) after the sentence. Operating modes: no markers."
+fi
+
+# Tool routing: direct questions to AskUserQuestion tool when a mode is active
+if [ -n "$MODE_TAG" ]; then
+  WRAPPED+=$'\n'"When you need to ask the user a question (clarification, decision, check-in, approval), use the AskUserQuestion tool. Do not write questions as plain text output and wait."
 fi
 
 if [ -n "$WRAPPED" ]; then

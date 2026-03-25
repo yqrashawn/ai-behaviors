@@ -162,6 +162,14 @@ run_test "no_final_reminder_in_output"
 OUT=$(invoke "do stuff #=code #deep" | context_of)
 assert_not_contains "$OUT" "FINAL REMINDER" && pass
 
+run_test "mode_includes_ask_tool_instruction"
+OUT=$(invoke "do stuff #=code" | context_of)
+assert_contains "$OUT" "AskUserQuestion tool" && pass
+
+run_test "mode_with_modifiers_includes_ask_tool_instruction"
+OUT=$(invoke "do stuff #=code #deep" | context_of)
+assert_contains "$OUT" "AskUserQuestion tool" && pass
+
 # === Full injection: unknown behaviors ===
 
 echo ""
@@ -247,6 +255,11 @@ run_test "continuation_mode_only_omits_marker_instruction"
 invoke "do stuff #=code" >/dev/null
 OUT=$(invoke "next question" | context_of)
 assert_not_contains "$OUT" "mark it: (#name)" && pass
+
+run_test "continuation_with_mode_includes_ask_tool_instruction"
+invoke "do stuff #=code #deep" >/dev/null
+OUT=$(invoke "next question" | context_of)
+assert_contains "$OUT" "AskUserQuestion tool" && pass
 
 # === Local behaviors search ===
 
