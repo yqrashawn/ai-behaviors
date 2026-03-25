@@ -40,7 +40,7 @@ Flag: unexpected state, uninitialized reads, aliasing, shared mutation.
 
 1. Read the code under test — understand what it claims to do
 2. Spawn Explore agents to find untested paths, edge cases, missing coverage
-3. Use Bash to run existing tests and observe current state
+3. Run existing tests and observe current state (Bash, REPL, or any available execution tool)
 4. Actively probe boundaries: zero, null, overflow, empty, concurrent, reordered
 5. Trace execution mentally and with tools — flag where SHOULD ≠ DOES
 6. Report: bugs, exploit scenarios, and test cases that would catch them

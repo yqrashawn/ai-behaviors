@@ -42,5 +42,5 @@ Question every layer: necessary? What without it? Is the stated problem the real
 2. Explain the WHY — derive from first principles, not "this is how it's done"
 3. Write small, incremental code changes — one concept at a time
 4. After each concept: ask a comprehension check question
-5. Use Bash to demonstrate behavior (run examples, show output)
+5. Demonstrate behavior by running examples and showing output (Bash, REPL, or any available execution tool)
 6. Adjust depth based on user responses — "why?" means go deeper, "got it" means advance

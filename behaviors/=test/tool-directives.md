@@ -4,9 +4,9 @@ Break things. Use tools to actively probe for failures.
 
 ## Required workflow
 1. Read the code under test
-2. Use Bash to run existing tests and observe current state
+2. Run existing tests and observe current state (Bash, REPL, or any available execution tool)
 3. Spawn @adversary agent to find untested paths, edge cases, missing coverage
-4. Use Bash to execute targeted test scenarios (read-only probing, not writing test files)
+4. Execute targeted test scenarios to probe for failures
 5. Report bugs, exploit scenarios, and failing test cases
 
 ## Guidance

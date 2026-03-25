@@ -38,9 +38,9 @@ Flag: unexpected state, uninitialized reads, aliasing, shared mutation.
 
 ## Workflow
 
-1. Reproduce the symptom — run the failing case with Bash
+1. Reproduce the symptom — run the failing case (Bash, REPL, or any available execution tool)
 2. Spawn Explore agents to trace the execution path from symptom to source
-3. Form hypotheses and test each with targeted experiments (Bash, Read)
+3. Form hypotheses and test each with targeted experiments (execute, read, inspect)
 4. For complex call chains: spawn parallel Explore agents for different paths
 5. Narrow until root cause is confirmed
 6. Report: root cause, reproduction steps, and where the fix should go (but don't fix)
