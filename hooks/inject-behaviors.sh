@@ -1,12 +1,27 @@
 #!/bin/bash
 set -euo pipefail
 
+# Debug logging — set to 1 to enable, 0 to disable
+DEBUG=1
+DEBUG_LOG="/tmp/ai-behaviors-debug.log"
+
+debug() {
+  [ "$DEBUG" -eq 1 ] || return 0
+  echo "[$(date '+%H:%M:%S')] $*" >> "$DEBUG_LOG"
+}
+
 INPUT=$(cat)
 PROMPT=$(jq -r '.prompt // empty' <<< "$INPUT")
 SESSION_ID=$(jq -r '.session_id // empty' <<< "$INPUT")
 CWD=$(jq -r '.cwd // empty' <<< "$INPUT")
 
+debug ""
+debug "--- new invocation ---"
+debug "SESSION_ID=$SESSION_ID"
+debug "PROMPT=${PROMPT:0:200}"
+
 if [ -z "$PROMPT" ]; then
+  debug "empty prompt, exiting"
   exit 0
 fi
 
@@ -135,8 +150,15 @@ build_tree() {
 # Anchor on #= (operating mode) to find the last intentional behavior line.
 # The #= prefix is a distinct namespace that doesn't appear in code/prose.
 # Once we find the anchoring line, extract ALL hashtags from it (mode + modifiers).
+# Fallback: if no #= mode found, look for any line with #hashtags (modifier-only usage).
 LAST_TAG_LINE=$(grep -E '(^|[[:space:]])#=[a-zA-Z0-9_-]+' <<< "$PROMPT" | tail -1) || true
+if [ -z "$LAST_TAG_LINE" ]; then
+  LAST_TAG_LINE=$(grep -E '(^|[[:space:]])#[a-zA-Z0-9_-]+' <<< "$PROMPT" | tail -1) || true
+fi
 HASHTAGS=$(grep -oE '(^|[[:space:]])#[=a-zA-Z0-9_-]+' <<< "$LAST_TAG_LINE" | sed 's/^[[:space:]]//' | awk '!seen[$0]++') || true
+
+debug "LAST_TAG_LINE=$LAST_TAG_LINE"
+debug "HASHTAGS=$(echo $HASHTAGS | tr '\n' ' ')"
 
 # State file for persistence across prompts
 STATE_DIR="$HOME/.claude/behaviors-state"
@@ -146,14 +168,18 @@ if [ -n "$SESSION_ID" ]; then
 fi
 
 if [ -z "$HASHTAGS" ]; then
+  debug "no hashtags in prompt, checking state"
   if [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ] && [ -s "$STATE_FILE" ]; then
     ACTIVE=$(sed 's/#op-/#=/g' < "$STATE_FILE")
+    debug "continuation: ACTIVE=$ACTIVE"
     # Expand composites from state
     EXPAND_LEAF_TAGS=""
     EXPAND_MISSING=""
     _CUSTOM_DIR=$(mktemp -d)
     trap 'rm -rf "$_CUSTOM_DIR"' EXIT
     expand_tags "$ACTIVE" 0 ""
+    debug "continuation expanded: LEAF_TAGS=$EXPAND_LEAF_TAGS"
+    debug "continuation expanded: MISSING=$EXPAND_MISSING"
     CONSTRAINTS=""
     for TAG in $EXPAND_LEAF_TAGS; do
       TAG_NAME="${TAG#\#}"
@@ -335,10 +361,14 @@ _CUSTOM_DIR=$(mktemp -d)
 trap 'rm -rf "$_CUSTOM_DIR"' EXIT
 expand_tags "$(echo "$HASHTAGS" | tr '\n' ' ')" 0 ""
 
+debug "expanded: LEAF_TAGS=$EXPAND_LEAF_TAGS"
+debug "expanded: MISSING=$EXPAND_MISSING"
+
 # Reject multiple operating modes (post-expansion)
 MODE_COUNT=$(echo "$EXPAND_LEAF_TAGS" | tr ' ' '\n' | grep -c '^#=' || true)
 if [ "$MODE_COUNT" -gt 1 ]; then
   MODE_TAGS=$(echo "$EXPAND_LEAF_TAGS" | tr ' ' '\n' | grep '^#=' | tr '\n' ' ')
+  debug "CONFLICT: multiple modes: $MODE_TAGS"
   echo "Conflict: multiple operating modes: ${MODE_TAGS%. }. Use one at a time." >&2
   exit 2
 fi
@@ -347,6 +377,9 @@ fi
 MODE_TAG=$(echo "$EXPAND_LEAF_TAGS" | tr ' ' '\n' | grep '^#=' | head -1 || true)
 MODE_TAG="${MODE_TAG#\#}"
 MOD_TAGS=$(echo "$EXPAND_LEAF_TAGS" | tr ' ' '\n' | grep -v '^#=' | grep '.' || true)
+
+debug "MODE_TAG=$MODE_TAG"
+debug "MOD_TAGS=$(echo $MOD_TAGS | tr '\n' ' ')"
 
 # Read mode content
 MODE_CONTEXT=""
@@ -406,6 +439,7 @@ if [ -n "$STATE_FILE" ]; then
     ACTIVE+="$TAG"
   done <<< "$ORIG_OTHERS"
   echo "$ACTIVE" > "$STATE_FILE"
+  debug "state written: $ACTIVE"
 fi
 
 # Build structured output
@@ -443,12 +477,15 @@ fi
 
 if [ -n "$WRAPPED" ]; then
   WRAPPED+=$'\n'"The above operating-mode and behavior-modifiers apply to all your responses until superseded. When new blocks appear, only the most recent set applies. During compaction, preserve the most recent <operating-mode> and <behavior-modifiers> blocks verbatim. Discard all older ones."
+  debug "output: injecting $(echo "$WRAPPED" | wc -c | tr -d ' ') bytes"
   jq -n --arg ctx "$WRAPPED" '{
     hookSpecificOutput: {
       hookEventName: "UserPromptSubmit",
       additionalContext: $ctx
     }
   }'
+else
+  debug "output: nothing to inject"
 fi
 
 exit 0
