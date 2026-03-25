@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Debug logging — set to 1 to enable, 0 to disable
-DEBUG=1
+DEBUG=0
 DEBUG_LOG="/tmp/ai-behaviors-debug.log"
 
 debug() {

@@ -11,8 +11,8 @@ echo "Installing ai-behaviors hook"
 mkdir -p "$HOOKS_DIR"
 
 # --- Symlink hook ---
-ln -sf "$REPO_DIR/hooks/inject-behaviors.sh" "$HOOKS_DIR/inject-behaviors.sh"
-echo "  symlinked: inject-behaviors.sh → $HOOKS_DIR/"
+ln -sf "$REPO_DIR/hooks/inject-behaviors.bb" "$HOOKS_DIR/inject-behaviors.bb"
+echo "  symlinked: inject-behaviors.bb → $HOOKS_DIR/"
 
 # --- Register hook in settings.json ---
 if [ ! -f "$SETTINGS" ]; then
@@ -23,17 +23,17 @@ if [ ! -f "$SETTINGS" ]; then
 EOF
 fi
 
-inject_cmd="$HOOKS_DIR/inject-behaviors.sh"
-if ! grep -q "inject-behaviors.sh" "$SETTINGS" 2>/dev/null; then
+inject_cmd="$HOOKS_DIR/inject-behaviors.bb"
+if ! grep -q "inject-behaviors.bb" "$SETTINGS" 2>/dev/null; then
   tmp=$(mktemp)
   jq --arg cmd "$inject_cmd" '
     .hooks //= {} |
     .hooks.UserPromptSubmit //= [] |
     .hooks.UserPromptSubmit += [{"hooks": [{"type": "command", "command": $cmd, "timeout": 5}]}]
-  ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
-  echo "  registered: inject-behaviors.sh in settings.json"
+  ' "$SETTINGS" > "$tmp" && cat "$tmp" > "$SETTINGS" && rm "$tmp"
+  echo "  registered: inject-behaviors.bb in settings.json"
 else
-  echo "  already registered: inject-behaviors.sh"
+  echo "  already registered: inject-behaviors.bb"
 fi
 
 # --- Symlink agents ---
