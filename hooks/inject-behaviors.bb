@@ -477,11 +477,21 @@
     (let [hashtags (extract-hashtags prompt)]
       (debug "HASHTAGS=" (str/join " " (or hashtags [])))
 
-      ;; No hashtags — check state for continuation
+      ;; No hashtags — check state for continuation, or apply default
       (when (or (nil? hashtags) (empty? hashtags))
         (debug "no hashtags in prompt, checking state")
-        (handle-continuation session-id dirs)
-        (System/exit 0))
+        (if (read-state session-id)
+          (do (handle-continuation session-id dirs)
+              (System/exit 0))
+          ;; No state — apply default behavior (resolve frame/compose at runtime)
+          (let [default-dir (resolve-behavior-dir "frame" dirs)]
+            (if (and default-dir (.exists (io/file default-dir "compose")))
+              (let [composed (str/trim (slurp (io/file default-dir "compose")))
+                    default-tags (str/split composed #"\s+")]
+                (debug "default fallback: HASHTAGS=" (str/join " " default-tags))
+                (handle-activation default-tags session-id dirs)
+                (System/exit 0))
+              (System/exit 0)))))
 
       ;; Handle #CLEAR
       (when (some #(= % "#CLEAR") hashtags)

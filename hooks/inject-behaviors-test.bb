@@ -10,7 +10,6 @@
 
 (def repo-dir (.getCanonicalPath (io/file (str (.getParent (io/file *file*)) "/.."))))
 (def bb-script (str repo-dir "/hooks/inject-behaviors.bb"))
-(def sh-script (str repo-dir "/hooks/inject-behaviors.sh"))
 (def state-dir (str (System/getProperty "user.home") "/.claude/behaviors-state"))
 (def cwd repo-dir)
 
@@ -35,9 +34,6 @@
 
 (defn run-bb [input-map]
   (run-script bb-script input-map))
-
-(defn run-sh [input-map]
-  (run-script sh-script input-map))
 
 (defn parse-context
   "Extract additionalContext from hook JSON output."
@@ -89,23 +85,6 @@
     (pass! test-name)
     (fail! test-name (str "expected NOT to contain: " (pr-str needle)))))
 
-(defn assert-match-sh
-  "Assert bb output matches sh output for the same input (different session IDs)."
-  [test-name input-base]
-  (let [bb-sid (fresh-session)
-        sh-sid (fresh-session)
-        bb-result (run-bb (assoc input-base :session_id bb-sid))
-        sh-result (run-sh (assoc input-base :session_id sh-sid))
-        bb-ctx (parse-context (:stdout bb-result))
-        sh-ctx (parse-context (:stdout sh-result))]
-    (if (= bb-ctx sh-ctx)
-      (pass! (str test-name " [bb=sh]"))
-      (fail! (str test-name " [bb=sh]")
-             (str "bb and sh differ.\n"
-                  "        bb exit=" (:exit bb-result) " sh exit=" (:exit sh-result) "\n"
-                  "        bb ctx[0:150]=" (when bb-ctx (subs bb-ctx 0 (min 150 (count bb-ctx)))) "\n"
-                  "        sh ctx[0:150]=" (when sh-ctx (subs sh-ctx 0 (min 150 (count sh-ctx)))))))))
-
 ;; --- Test groups ---
 
 (defn test-empty-prompt []
@@ -116,11 +95,19 @@
     (assert-true "no stdout" (str/blank? (:stdout result)))))
 
 (defn test-no-hashtags-no-state []
-  (println "\n== No hashtags, no state ==")
+  (println "\n== No hashtags, no state → default frame ==")
   (let [sid (fresh-session)
-        result (run-bb {:prompt "just a regular prompt" :session_id sid :cwd cwd})]
+        result (run-bb {:prompt "just a regular prompt" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
     (assert-eq "exit 0" 0 (:exit result))
-    (assert-true "no stdout" (str/blank? (:stdout result)))))
+    (assert-contains "default injects frame mode" ctx "<operating-mode>")
+    (assert-contains "default has frame content" ctx "frame :: Context")
+    (assert-contains "default has #g modifiers" ctx "#deep")
+    (assert-contains "default has #ground modifier" ctx "Verify every term resolves")
+    ;; State should be written so continuation works
+    (let [state (read-state-file sid)]
+      (assert-contains "default writes state" state "#=frame"))
+))
 
 (defn test-mode-only []
   (println "\n== Mode only ==")
@@ -132,8 +119,7 @@
     (assert-contains "has #=code content" ctx "#=code")
     (assert-not-contains "no behavior-modifiers section" ctx "<behavior-modifiers>\n")
     (assert-contains "has ask-tool instruction" ctx "AskUserQuestion")
-    (assert-contains "has compaction instruction" ctx "During compaction"))
-  (assert-match-sh "mode only" {:prompt "fix it #=code" :cwd cwd}))
+    (assert-contains "has compaction instruction" ctx "During compaction")))
 
 (defn test-mode-plus-modifier []
   (println "\n== Mode + modifier ==")
@@ -145,8 +131,7 @@
     (assert-contains "has behavior-modifiers" ctx "<behavior-modifiers>")
     (assert-contains "has HARD CONSTRAINT preamble" ctx "They NEVER relax or override HARD CONSTRAINTs")
     (assert-contains "has marking instruction" ctx "(#name) after the sentence")
-    (assert-contains "has ask-tool instruction" ctx "AskUserQuestion"))
-  (assert-match-sh "mode+modifier" {:prompt "fix bug #=debug #deep" :cwd cwd}))
+    (assert-contains "has ask-tool instruction" ctx "AskUserQuestion")))
 
 (defn test-modifiers-only []
   (println "\n== Modifiers only (no mode) ==")
@@ -158,8 +143,7 @@
     (assert-contains "has behavior-modifiers" ctx "<behavior-modifiers>")
     (assert-not-contains "no HARD CONSTRAINT preamble" ctx "They NEVER relax")
     (assert-contains "has marking instruction" ctx "(#name) after the sentence")
-    (assert-not-contains "no ask-tool (no mode)" ctx "AskUserQuestion"))
-  (assert-match-sh "modifiers only" {:prompt "think about this #deep #challenge" :cwd cwd}))
+    (assert-not-contains "no ask-tool (no mode)" ctx "AskUserQuestion")))
 
 (defn test-composite-expansion []
   (println "\n== Composite expansion ==")
@@ -171,8 +155,7 @@
     (assert-contains "has operating-mode (from #=code)" ctx "<operating-mode>")
     (assert-contains "has behavior-modifiers (from #g expansion)" ctx "<behavior-modifiers>")
     ;; #g expands to many leaf modifiers including #deep
-    (assert-contains "has #deep content (from #g)" ctx "#deep"))
-  (assert-match-sh "composite" {:prompt "implement it #code" :cwd cwd}))
+    (assert-contains "has #deep content (from #g)" ctx "#deep")))
 
 (defn test-composite-plus-extra []
   (println "\n== Composite + extra modifier ==")
@@ -181,8 +164,7 @@
         ctx (parse-context (:stdout result))]
     (assert-eq "exit 0" 0 (:exit result))
     (assert-contains "has operating-mode" ctx "<operating-mode>")
-    (assert-contains "has challenge content" ctx "#challenge"))
-  (assert-match-sh "composite+extra" {:prompt "do it #code #challenge" :cwd cwd}))
+    (assert-contains "has challenge content" ctx "#challenge")))
 
 (defn test-continuation []
   (println "\n== Continuation (no hashtags, read state) ==")
@@ -195,23 +177,6 @@
     (assert-eq "exit 0" 0 (:exit result))
     (assert-contains "has Active:" ctx "Active: #=debug #deep")
     (assert-contains "has HARD CONSTRAINT" ctx "HARD CONSTRAINT")))
-
-(defn test-continuation-matches-sh []
-  (println "\n== Continuation bb=sh ==")
-  ;; Activate with bb, continue with bb; activate with sh, continue with sh; compare continuation output
-  (let [bb-sid (fresh-session)
-        sh-sid (fresh-session)
-        input {:prompt "#=review #deep" :cwd cwd}
-        _ (run-bb (assoc input :session_id bb-sid))
-        _ (run-sh (assoc input :session_id sh-sid))
-        cont-input {:prompt "next step" :cwd cwd}
-        bb-cont (run-bb (assoc cont-input :session_id bb-sid))
-        sh-cont (run-sh (assoc cont-input :session_id sh-sid))
-        bb-ctx (parse-context (:stdout bb-cont))
-        sh-ctx (parse-context (:stdout sh-cont))]
-    (if (= bb-ctx sh-ctx)
-      (pass! "continuation bb=sh")
-      (fail! "continuation bb=sh" "continuation outputs differ"))))
 
 (defn test-state-file-format []
   (println "\n== State file format ==")
@@ -276,8 +241,7 @@
     (assert-contains "has explain-instruction" ctx "<explain-instruction>")
     (assert-contains "has explain-behaviors" ctx "<explain-behaviors>")
     (assert-contains "has mode behavior" ctx "role=\"mode\"")
-    (assert-contains "has modifier behavior" ctx "role=\"modifier\""))
-  (assert-match-sh "#EXPLAIN with tags" {:prompt "#EXPLAIN #=code #deep" :cwd cwd}))
+    (assert-contains "has modifier behavior" ctx "role=\"modifier\"")))
 
 (defn test-explain-composite []
   (println "\n== #EXPLAIN with composite ==")
@@ -287,8 +251,7 @@
     (assert-eq "exit 0" 0 (:exit result))
     (assert-contains "has expansion-tree" ctx "<expansion-tree>")
     (assert-contains "has tree connectors" ctx "├── ")
-    (assert-contains "has explain-behaviors" ctx "<explain-behaviors>"))
-  (assert-match-sh "#EXPLAIN composite" {:prompt "#EXPLAIN #code" :cwd cwd}))
+    (assert-contains "has explain-behaviors" ctx "<explain-behaviors>")))
 
 (defn test-explain-from-state []
   (println "\n== #EXPLAIN from state ==")
@@ -358,6 +321,45 @@
     (assert-eq "exit 0" 0 (:exit result))
     (assert-contains "still produces output" (parse-context (:stdout result)) "<operating-mode>")))
 
+(defn test-default-after-clear []
+  (println "\n== Default frame after #CLEAR ==")
+  (let [sid (fresh-session)
+        ;; Activate, then clear
+        _ (run-bb {:prompt "#=code" :session_id sid :cwd cwd})
+        _ (run-bb {:prompt "#CLEAR" :session_id sid :cwd cwd})
+        ;; Next bare prompt should get default frame
+        result (run-bb {:prompt "what now?" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0" 0 (:exit result))
+    (assert-contains "post-clear default injects frame" ctx "frame :: Context")
+    (assert-contains "post-clear default has modifiers" ctx "<behavior-modifiers>")))
+
+(defn test-default-continuation []
+  (println "\n== Default frame continuation ==")
+  (let [sid (fresh-session)
+        ;; First prompt: no hashtags, no state → default frame activates and writes state
+        _ (run-bb {:prompt "hello" :session_id sid :cwd cwd})
+        ;; Second prompt: no hashtags, state exists → continuation
+        result (run-bb {:prompt "follow up" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0" 0 (:exit result))
+    (assert-contains "continuation shows Active" ctx "Active:")
+    (assert-contains "continuation has frame" ctx "#=frame")))
+
+(defn test-default-override []
+  (println "\n== Explicit hashtag overrides default ==")
+  (let [sid (fresh-session)
+        ;; First prompt: no hashtags → default frame
+        _ (run-bb {:prompt "hello" :session_id sid :cwd cwd})
+        ;; Second prompt: explicit #=code overrides
+        result (run-bb {:prompt "now code #=code" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0" 0 (:exit result))
+    (assert-contains "override has code mode" ctx "Write production code")
+    (assert-not-contains "no frame content" ctx "frame :: Context")
+    (let [state (read-state-file sid)]
+      (assert-contains "state updated to code" state "#=code"))))
+
 (defn test-mode-ordering-in-state []
   (println "\n== State: modes before modifiers ==")
   (let [sid (fresh-session)
@@ -371,7 +373,6 @@
 
 (defn -main []
   (println (str "Running e2e tests against: " bb-script))
-  (println (str "Reference shell script: " sh-script))
   (println (str "Repo dir: " repo-dir))
   (println "")
 
@@ -383,7 +384,6 @@
   (test-composite-expansion)
   (test-composite-plus-extra)
   (test-continuation)
-  (test-continuation-matches-sh)
   (test-state-file-format)
   (test-state-filters-unknown)
   (test-clear)
@@ -399,6 +399,9 @@
   (test-dedup-in-expansion)
   (test-no-session-id)
   (test-missing-cwd)
+  (test-default-after-clear)
+  (test-default-continuation)
+  (test-default-override)
   (test-mode-ordering-in-state)
 
   (println "")

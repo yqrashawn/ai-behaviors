@@ -276,7 +276,7 @@ agents/
 ├── mentor.md               # #=mentor #deep #first-principles
 └── framer.md               # #=frame #challenge #wide
 hooks/
-└── inject-behaviors.sh     # UserPromptSubmit: injects prompts
+└── inject-behaviors.bb     # UserPromptSubmit: injects prompts
 ```
 
 ## Composites
