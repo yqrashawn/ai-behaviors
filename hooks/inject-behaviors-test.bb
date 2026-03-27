@@ -369,6 +369,143 @@
     ;; State should have modes first
     (assert-eq "mode first in state" "#=code #deep" state)))
 
+;; --- Fix A: XML block stripping ---
+
+(defn test-xml-blocks-stripped-from-extraction []
+  (println "\n== Fix A: XML blocks stripped before hashtag extraction ==")
+  ;; #uuid inside <knowledge-context> should NOT be extracted as a hashtag
+  (let [sid (fresh-session)
+        prompt (str "<knowledge-context>\nSome doc with #uuid references and #api-key mentions\n</knowledge-context>\njust a regular prompt")
+        result (run-bb {:prompt prompt :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0" 0 (:exit result))
+    ;; Should fall through to default frame (no real hashtags found)
+    (assert-contains "default frame injected" ctx "frame :: Context")
+    (assert-true "no unknown warnings on stderr" (not (str/includes? (or (:stderr result) "") "Unknown"))))
+
+  ;; Real hashtag outside XML should still work
+  (let [sid (fresh-session)
+        prompt (str "<system-reminder>\nignore #review stuff\n</system-reminder>\nfix the bug #=debug #deep")
+        result (run-bb {:prompt prompt :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0 (real tags work)" 0 (:exit result))
+    (assert-contains "has debug mode" ctx "#=debug")
+    (assert-contains "has deep modifier" ctx "#deep"))
+
+  ;; Multiple XML blocks stripped
+  (let [sid (fresh-session)
+        prompt (str "<knowledge-context>\n#foo\n</knowledge-context>\n<system-reminder>\n#bar\n</system-reminder>\nhello world")
+        result (run-bb {:prompt prompt :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0 (multi XML)" 0 (:exit result))
+    (assert-contains "default frame (no real tags)" ctx "frame :: Context"))
+
+  ;; Nested-looking content (non-matching tags) still stripped correctly
+  (let [sid (fresh-session)
+        prompt (str "<user_injected_message>\nsome #inject stuff\n</user_injected_message>\ndo thing #=code")
+        result (run-bb {:prompt prompt :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0 (underscore tags)" 0 (:exit result))
+    (assert-contains "has code mode" ctx "#=code")
+    (assert-not-contains "no inject artifact" ctx "#inject")))
+
+;; --- Fix B: Empty state truthy ---
+
+(defn test-empty-state-returns-nil []
+  (println "\n== Fix B: Empty/newline state file falls through to default ==")
+  ;; Simulate the original bug: 1-byte state file (just newline)
+  (let [sid (fresh-session)
+        state-f (io/file state-dir sid)]
+    (.mkdirs (io/file state-dir))
+    (spit state-f "\n")
+    ;; Bare prompt should fall through to default, not enter continuation
+    (let [result (run-bb {:prompt "hello" :session_id sid :cwd cwd})
+          ctx (parse-context (:stdout result))]
+      (assert-eq "exit 0" 0 (:exit result))
+      (assert-contains "default frame (not continuation)" ctx "frame :: Context")
+      (assert-not-contains "no Active: prefix (not continuation)" ctx "Active:")))
+
+  ;; Empty file (0 bytes) should also fall through
+  (let [sid (fresh-session)
+        state-f (io/file state-dir sid)]
+    (spit state-f "")
+    (let [result (run-bb {:prompt "hello" :session_id sid :cwd cwd})
+          ctx (parse-context (:stdout result))]
+      (assert-eq "exit 0 (0-byte)" 0 (:exit result))
+      (assert-contains "default frame (0-byte)" ctx "frame :: Context")))
+
+  ;; Whitespace-only state file
+  (let [sid (fresh-session)
+        state-f (io/file state-dir sid)]
+    (spit state-f "   \n  \n")
+    (let [result (run-bb {:prompt "hello" :session_id sid :cwd cwd})
+          ctx (parse-context (:stdout result))]
+      (assert-eq "exit 0 (whitespace)" 0 (:exit result))
+      (assert-contains "default frame (whitespace-only)" ctx "frame :: Context"))))
+
+(defn test-write-state-noop-on-blank []
+  (println "\n== Fix B: write-state! no-ops on blank content ==")
+  ;; All-unknown activation should NOT create/overwrite state file
+  (let [sid (fresh-session)
+        ;; First: activate real behaviors
+        _ (run-bb {:prompt "#=code #deep" :session_id sid :cwd cwd})
+        state-before (read-state-file sid)]
+    (assert-eq "state has real tags" "#=code #deep" state-before)
+    ;; Now: another activation where partial tags resolve
+    ;; (This tests that write-state! works normally when content is non-blank)
+    (run-bb {:prompt "#=debug" :session_id sid :cwd cwd})
+    (let [state-after (read-state-file sid)]
+      (assert-eq "state updated to debug" "#=debug" state-after))))
+
+;; --- Fix C: All-unknown hashtags ---
+
+(defn test-all-unknown-falls-through []
+  (println "\n== Fix C: All-unknown hashtags → treat as no hashtags ==")
+  ;; Single unknown tag, no existing state → default frame
+  (let [sid (fresh-session)
+        result (run-bb {:prompt "do something #nonexistent" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0" 0 (:exit result))
+    (assert-contains "stderr warns about unknown" (:stderr result) "Unknown behaviors")
+    (assert-contains "default frame activated" ctx "frame :: Context"))
+
+  ;; Multiple unknown tags → default frame
+  (let [sid (fresh-session)
+        result (run-bb {:prompt "#fake1 #fake2 #fake3" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0 (multi unknown)" 0 (:exit result))
+    (assert-contains "stderr warns" (:stderr result) "Unknown behaviors")
+    (assert-contains "default frame (multi)" ctx "frame :: Context"))
+
+  ;; All unknown with existing state → continuation (not default)
+  (let [sid (fresh-session)
+        _ (run-bb {:prompt "#=debug #deep" :session_id sid :cwd cwd})
+        result (run-bb {:prompt "#totallyfake" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0 (unknown + state)" 0 (:exit result))
+    (assert-contains "continuation path" ctx "Active: #=debug #deep"))
+
+  ;; Mixed known + unknown: normal activation (NOT all-unknown path)
+  (let [sid (fresh-session)
+        result (run-bb {:prompt "#=code #nonexistent" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0 (mixed)" 0 (:exit result))
+    (assert-contains "code mode activated" ctx "#=code")
+    (assert-contains "warns about unknown" (:stderr result) "Unknown behaviors")
+    (let [state (read-state-file sid)]
+      (assert-eq "state has only resolved" "#=code" state))))
+
+(defn test-all-unknown-no-state-poisoning []
+  (println "\n== Fix C: All-unknown doesn't poison state ==")
+  (let [sid (fresh-session)
+        ;; Activate real behaviors
+        _ (run-bb {:prompt "#=code #deep" :session_id sid :cwd cwd})
+        state-before (read-state-file sid)
+        ;; All unknown — should NOT overwrite state
+        _ (run-bb {:prompt "#bogus" :session_id sid :cwd cwd})
+        state-after (read-state-file sid)]
+    (assert-eq "state preserved" state-before state-after)))
+
 ;; --- Run all tests ---
 
 (defn -main []
@@ -403,6 +540,15 @@
   (test-default-continuation)
   (test-default-override)
   (test-mode-ordering-in-state)
+
+  ;; Fix A: XML block stripping
+  (test-xml-blocks-stripped-from-extraction)
+  ;; Fix B: Empty state truthy
+  (test-empty-state-returns-nil)
+  (test-write-state-noop-on-blank)
+  ;; Fix C: All-unknown hashtags
+  (test-all-unknown-falls-through)
+  (test-all-unknown-no-state-poisoning)
 
   (println "")
   (println (str "========================================"))

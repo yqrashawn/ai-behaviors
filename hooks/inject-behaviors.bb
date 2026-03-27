@@ -66,6 +66,12 @@
   [f]
   (str/trimr (slurp f)))
 
+(defn strip-xml-blocks
+  "Remove content between matched XML-like open/close tags before hashtag extraction.
+   Prevents false positives from injected context (knowledge-context, system-reminder, etc.)."
+  [text]
+  (str/replace text #"(?s)<([a-zA-Z][a-zA-Z0-9_-]*)[^>]*>.*?</\1>" ""))
+
 ;; --- Composite expansion (recursive) ---
 
 (defn expand-tags
@@ -141,7 +147,8 @@
   "From prompt text, find the last tag line and extract unique hashtags.
    Anchors on #= (operating mode) first; fallback to any #hashtag line."
   [prompt]
-  (let [lines (str/split-lines prompt)
+  (let [cleaned (strip-xml-blocks prompt)
+        lines (str/split-lines cleaned)
         mode-line (->> lines
                        (filter #(re-find #"(^|[\s])#=[a-zA-Z0-9_-]+" %))
                        last)
@@ -167,12 +174,15 @@
   (when-let [f (state-file session-id)]
     (let [file (io/file f)]
       (when (and (.exists file) (pos? (.length file)))
-        (str/trim (slurp file))))))
+        (let [content (str/trim (slurp file))]
+          (when-not (str/blank? content)
+            content))))))
 
 (defn write-state! [session-id content]
-  (when-let [f (state-file session-id)]
-    (.mkdirs (io/file state-dir))
-    (spit f (str content "\n"))))
+  (when-not (str/blank? content)
+    (when-let [f (state-file session-id)]
+      (.mkdirs (io/file state-dir))
+      (spit f (str content "\n")))))
 
 (defn clear-state! [session-id]
   (when-let [f (state-file session-id)]
@@ -436,6 +446,20 @@
               (debug "output: injecting" (count full-output) "bytes")
               (emit-json full-output))))))))
 
+;; --- No-hashtags fallback (continuation or default) ---
+
+(defn handle-no-hashtags
+  "Fall through to continuation (if state exists) or default behavior."
+  [session-id dirs]
+  (if (read-state session-id)
+    (handle-continuation session-id dirs)
+    (let [default-dir (resolve-behavior-dir "frame" dirs)]
+      (when (and default-dir (.exists (io/file default-dir "compose")))
+        (let [composed (str/trim (slurp (io/file default-dir "compose")))
+              default-tags (str/split composed #"\s+")]
+          (debug "default fallback: HASHTAGS=" (str/join " " default-tags))
+          (handle-activation default-tags session-id dirs))))))
+
 ;; --- Main ---
 
 (defn -main []
@@ -480,18 +504,8 @@
       ;; No hashtags — check state for continuation, or apply default
       (when (or (nil? hashtags) (empty? hashtags))
         (debug "no hashtags in prompt, checking state")
-        (if (read-state session-id)
-          (do (handle-continuation session-id dirs)
-              (System/exit 0))
-          ;; No state — apply default behavior (resolve frame/compose at runtime)
-          (let [default-dir (resolve-behavior-dir "frame" dirs)]
-            (if (and default-dir (.exists (io/file default-dir "compose")))
-              (let [composed (str/trim (slurp (io/file default-dir "compose")))
-                    default-tags (str/split composed #"\s+")]
-                (debug "default fallback: HASHTAGS=" (str/join " " default-tags))
-                (handle-activation default-tags session-id dirs)
-                (System/exit 0))
-              (System/exit 0)))))
+        (handle-no-hashtags session-id dirs)
+        (System/exit 0))
 
       ;; Handle #CLEAR
       (when (some #(= % "#CLEAR") hashtags)
@@ -500,6 +514,16 @@
       ;; Handle #EXPLAIN
       (when (some #(= % "#EXPLAIN") hashtags)
         (handle-explain hashtags session-id dirs))
+
+      ;; Pre-check: if all hashtags are unknown, treat as no hashtags
+      (let [{:keys [leaves missing]} (expand-tags hashtags dirs 0 #{})]
+        (when (empty? leaves)
+          (debug "all hashtags unknown:" (str/join " " missing) "— treating as no hashtags")
+          (when (seq missing)
+            (binding [*out* *err*]
+              (println (str "Unknown behaviors: " (str/join " " missing)))))
+          (handle-no-hashtags session-id dirs)
+          (System/exit 0)))
 
       ;; Main activation path
       (handle-activation hashtags session-id dirs))))
