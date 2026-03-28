@@ -506,6 +506,116 @@
         state-after (read-state-file sid)]
     (assert-eq "state preserved" state-before state-after)))
 
+;; --- Typo correction ---
+
+(defn test-typo-correction []
+  (println "\n== Typo correction ==")
+  ;; Basic: #researcch alone corrected to #research, expands as composite
+  (let [sid (fresh-session)
+        result (run-bb {:prompt "do this #researcch" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0" 0 (:exit result))
+    (assert-not-contains "no unknown warning" (:stderr result) "Unknown")
+    ;; research composite expands to #=research mode
+    (assert-contains "research mode present" ctx "<operating-mode>")
+    ;; State stores corrected form
+    (let [state (read-state-file sid)]
+      (assert-contains "state has corrected name" state "#research")
+      (assert-not-contains "state has no typo" state "researcch")))
+
+  ;; Typo with extra modifier: #researcch #challenge
+  (let [sid (fresh-session)
+        result (run-bb {:prompt "do this #researcch #challenge" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0 (typo + modifier)" 0 (:exit result))
+    (assert-not-contains "no unknown warning" (:stderr result) "Unknown")
+    (assert-contains "has challenge content" ctx "#challenge")
+    (let [state (read-state-file sid)]
+      (assert-contains "state has corrected composite" state "#research")
+      (assert-contains "state has extra modifier" state "#challenge")))
+
+  ;; Continuation after typo-corrected activation uses corrected name
+  (let [sid (fresh-session)
+        _ (run-bb {:prompt "#researcch" :session_id sid :cwd cwd})
+        result (run-bb {:prompt "follow up" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0 (continuation)" 0 (:exit result))
+    (assert-contains "continuation has corrected name" ctx "#research")
+    (assert-not-contains "continuation has no typo" ctx "researcch"))
+
+  ;; Non-typo passes through unchanged
+  (let [sid (fresh-session)
+        result (run-bb {:prompt "#=code #deep" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0 (non-typo)" 0 (:exit result))
+    (assert-contains "deep unchanged" ctx "#deep")))
+
+(defn test-typo-correction-mode-prefix []
+  (println "\n== Typo correction: mode prefix ==")
+  ;; #=researcch should correct to #=research (operating mode)
+  ;; Since research/ compose starts with #=research, #=researcch directly
+  ;; would try to resolve =researcch which doesn't exist.
+  ;; But the typo map corrects bare name: researcch → research
+  ;; So #=researcch → #=research → resolves as mode =research
+  (let [sid (fresh-session)
+        result (run-bb {:prompt "#=researcch #deep" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0" 0 (:exit result))
+    (assert-contains "research mode activates" ctx "<operating-mode>")
+    (assert-not-contains "no unknown warning" (:stderr result) "Unknown")
+    (let [state (read-state-file sid)]
+      (assert-eq "state has corrected mode" "#=research #deep" state))))
+
+(defn test-typo-state-persistence []
+  (println "\n== Typo correction: state persistence ==")
+  ;; State overwrite: typo activation → new activation overwrites
+  (let [sid (fresh-session)
+        _ (run-bb {:prompt "#researcch" :session_id sid :cwd cwd})
+        state-1 (read-state-file sid)
+        _ (run-bb {:prompt "#=code" :session_id sid :cwd cwd})
+        state-2 (read-state-file sid)]
+    (assert-contains "first state has corrected" state-1 "#research")
+    (assert-eq "second state overwrites" "#=code" state-2))
+
+  ;; EXPLAIN after typo-corrected state reads corrected form
+  (let [sid (fresh-session)
+        _ (run-bb {:prompt "#=deebug #deep" :session_id sid :cwd cwd})
+        result (run-bb {:prompt "#EXPLAIN" :session_id sid :cwd cwd})
+        ctx (parse-context (:stdout result))]
+    (assert-eq "exit 0" 0 (:exit result))
+    (assert-contains "explain has debug" ctx "#=debug")
+    (assert-not-contains "explain has no typo" ctx "deebug"))
+
+  ;; CLEAR after typo-corrected state wipes clean
+  (let [sid (fresh-session)
+        _ (run-bb {:prompt "#=deebug" :session_id sid :cwd cwd})
+        _ (assert-true "state exists" (not (str/blank? (read-state-file sid))))
+        _ (run-bb {:prompt "#CLEAR" :session_id sid :cwd cwd})]
+    (assert-true "state cleared" (str/blank? (read-state-file sid))))
+
+  ;; Multiple typos: both corrected in state
+  (let [sid (fresh-session)
+        _ (run-bb {:prompt "#=deebug #challnge" :session_id sid :cwd cwd})
+        state (read-state-file sid)]
+    (assert-eq "both corrected in state" "#=debug #challenge" state))
+
+  ;; Hyphen-omission typos: steelman → steel-man
+  (let [sid (fresh-session)
+        result (run-bb {:prompt "#=code #steelman" :session_id sid :cwd cwd})
+        state (read-state-file sid)]
+    (assert-eq "exit 0 (hyphen typo)" 0 (:exit result))
+    (assert-contains "state has hyphenated form" state "#steel-man")
+    (assert-not-contains "no unknown for steelman" (:stderr result) "Unknown"))
+
+  ;; Comment lines in typos file don't leak: # should not be a valid typo key
+  (let [sid (fresh-session)
+        ;; If comments leaked, "##" could theoretically match. But no tag starts with ##
+        ;; Just verify normal operation with the comment-containing file
+        result (run-bb {:prompt "#=frrame #deep" :session_id sid :cwd cwd})
+        state (read-state-file sid)]
+    (assert-eq "exit 0 (double-char typo)" 0 (:exit result))
+    (assert-eq "double-char corrected in state" "#=frame #deep" state)))
+
 ;; --- Run all tests ---
 
 (defn -main []
@@ -549,6 +659,10 @@
   ;; Fix C: All-unknown hashtags
   (test-all-unknown-falls-through)
   (test-all-unknown-no-state-poisoning)
+  ;; Typo correction
+  (test-typo-correction)
+  (test-typo-correction-mode-prefix)
+  (test-typo-state-persistence)
 
   (println "")
   (println (str "========================================"))

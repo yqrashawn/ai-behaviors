@@ -162,6 +162,41 @@
            distinct
            vec))))
 
+;; --- Typo correction ---
+
+(defn load-typo-map
+  "Read typos config file. Returns {\"typo\" \"correct\", ...}.
+   Format: one pair per line, whitespace-separated. Blank lines and #-comments skipped."
+  [repo-dir]
+  (let [f (io/file repo-dir "typos")]
+    (if (.exists f)
+      (->> (str/split-lines (slurp f))
+           (map str/trim)
+           (remove str/blank?)
+           (remove #(str/starts-with? % "#"))
+           (reduce (fn [m line]
+                     (let [parts (str/split line #"\s+" 2)]
+                       (if (= 2 (count parts))
+                         (assoc m (first parts) (second parts))
+                         m)))
+                   {}))
+      {})))
+
+(defn correct-typo
+  "Correct a single hashtag using the typo map.
+   Strips #= or # prefix, looks up bare name, re-attaches prefix."
+  [typo-map tag]
+  (let [[_ prefix name] (re-matches #"(#=?)(.*)" tag)]
+    (if-let [corrected (get typo-map name)]
+      (str prefix corrected)
+      tag)))
+
+(defn correct-typos
+  "Apply typo corrections to a list of hashtags."
+  [typo-map tags]
+  (when tags
+    (mapv #(correct-typo typo-map %) tags)))
+
 ;; --- State persistence ---
 
 (def state-dir (str (System/getProperty "user.home") "/.claude/behaviors-state"))
@@ -485,7 +520,8 @@
         user-behaviors-dir (str xdg-config "/ai-behaviors/behaviors")
         dirs {:local-behaviors-dir local-behaviors-dir
               :user-behaviors-dir  user-behaviors-dir
-              :behaviors-dir       behaviors-dir}]
+              :behaviors-dir       behaviors-dir}
+        typo-map (load-typo-map repo-dir)]
 
     (debug "")
     (debug "--- new invocation ---")
@@ -498,7 +534,7 @@
       (System/exit 0))
 
     ;; Extract hashtags
-    (let [hashtags (extract-hashtags prompt)]
+    (let [hashtags (correct-typos typo-map (extract-hashtags prompt))]
       (debug "HASHTAGS=" (str/join " " (or hashtags [])))
 
       ;; No hashtags — check state for continuation, or apply default
